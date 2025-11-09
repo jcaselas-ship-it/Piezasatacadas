@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Título simple de la versión 7 -->
+    <title>Ajedrez Capturas</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carga de Font Awesome para los íconos de ajedrez y control de UI -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+    
+    <!-- Carga de Tone.js para la síntesis de sonido -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    
+    <!-- Configuración de fuentes y colores personalizados -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#4f46e5',
+                        'primary-dark': '#4338ca',
+                        'success': '#10b981',
+                        'error': '#ef4444',
+                        'points': '#f97316',
+                    },
+                },
+            },
+        }
+    </script>
+
+    <!-- CSS personalizado con variables de color para temas y resaltados -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+
+        /* Variables CSS para temas de tablero y estilo de piezas */
+        :root {
+            --board-light-color: #d1d5db;
+            --board-dark-color: #3b82f6;
+            --piece-white-color: #f3f4f6;
+            --piece-black-color: #1f2937;
+        }
+        
+        /* Contenedor principal ajustado: Máx. 500px para centrarse en el tablero */
+        .game-container {
+            width: 100%;
+            max-width: 500px; 
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        #chessboard {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 1 / 1;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            margin: 0 auto;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .square {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            transition: background-color 0.3s ease;
+        }
+        
+        .square.light {
+            background-color: var(--board-light-color);
+        }
+        
+        .square.dark {
+            background-color: var(--board-dark-color);
+        }
+        
+        .piece {
+            font-size: 2.5rem; /* Tamaño grande para los íconos */
+            user-select: none;
+            position: relative;
+            z-index: 10;
+            line-height: 1; /* Asegura que el ícono esté centrado verticalmente */
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3); /* Pequeña sombra para realzar */
+        }
+        
+        .white-piece {
+            color: var(--piece-white-color);
+        }
+        
+        .black-piece {
+            color: var(--piece-black-color);
+        }
+
+        /* Resaltado para casillas/piezas atacadas (Versión 7 y 9) */
+        .attacked-square-highlight { 
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(239, 68, 68, 0.4); /* Rojo semitransparente */
+            z-index: 5;
+        }
+        
+        /* Resaltado de la pieza atacada (Versión 9: ataque simple) */
+        .attack-highlight {
+            box-shadow: 0 0 10px 5px rgba(239, 68, 68, 0.7); /* Sombra roja para indicar ataque */
+            border-radius: 50%;
+        }
+
+        /* Resaltado de la pieza atacada (Versión 9: ataque múltiple, más fuerte) */
+        .attack-highlight-strong { 
+            box-shadow: 0 0 20px 8px rgba(253, 224, 71, 0.9), 0 0 10px 5px rgba(239, 68, 68, 0.9); /* Sombra roja + amarilla para indicar ataque MÚLTIPLE */
+            border-radius: 50%; 
+        }
+
+        /* Feedback y Modal */
+        #feedback {
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            max-height: 0;
+            overflow: hidden;
+        }
+
+        #feedback.feedback-show {
+            opacity: 1;
+            transform: translateY(0);
+            max-height: 100px; /* Suficiente espacio para el texto */
+            margin-bottom: 1rem;
+        }
+
+        .color-swatch {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s ease;
+        }
+
+        .swatch-selected {
+            border-color: var(--primary);
+            transform: scale(1.1);
+            box-shadow: 0 0 5px rgba(79, 70, 229, 0.6);
+        }
+
+    </style>
+</head>
+<body class="p-4 md:p-8 bg-gray-100 min-h-screen">
+
+    <!-- El contenedor principal se ha cambiado de max-w-4xl a game-container (max-width: 500px) -->
+    <div class="game-container">
+        
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl md:text-3xl font-extrabold text-primary-dark tracking-tight">
+                Ajedrez Capturas
+            </h1>
+            <div class="flex space-x-4 items-center">
+                <!-- Botón de Sonido ON/OFF -->
+                <button onclick="toggleSound()" class="text-gray-600 hover:text-primary transition">
+                    <i id="soundIcon" class="fas fa-volume-up text-xl"></i>
+                </button>
+                <!-- Botón de Instrucciones (Caja de información) -->
+                <button onclick="toggleInfoModal(true)" class="text-gray-600 hover:text-primary transition">
+                    <i class="fas fa-info-circle text-xl"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Display de Vidas, Nivel y Puntuación -->
+        <div class="bg-white p-4 rounded-xl shadow-lg mb-6 flex justify-between flex-wrap text-center">
+            <div class="flex flex-col items-center p-2 w-1/3">
+                <span class="text-xs font-semibold uppercase text-gray-500">Vidas</span>
+                <div id="livesDisplay" class="flex space-x-1 mt-1">
+                    <!-- Los corazones se renderizan aquí -->
+                </div>
+            </div>
+            <div class="flex flex-col items-center p-2 w-1/3">
+                <span class="text-xs font-semibold uppercase text-gray-500">Nivel (Piezas)</span>
+                <span class="text-2xl font-bold text-gray-800 mt-1">
+                    <span id="currentLevelDisplay">1</span> (<span id="currentPieceCountDisplay">4</span>)
+                </span>
+            </div>
+            <div class="flex flex-col items-center p-2 w-1/3">
+                <span class="text-xs font-semibold uppercase text-gray-500">Puntuación Total</span>
+                <span id="totalScoreDisplay" class="text-2xl font-bold text-points mt-1">0</span>
+            </div>
+        </div>
+
+        <!-- Área de Juego (Mantiene su ancho máximo de 500px, pero ahora el contenedor lo restringe) -->
+        <div class="bg-white p-4 rounded-xl shadow-lg">
+            
+            <!-- Tablero de Ajedrez -->
+            <div id="chessboard" class="mb-6">
+                <!-- Cuadrados del tablero y piezas se renderizan aquí -->
+            </div>
+
+            <!-- Feedback y Solución -->
+            <div id="feedback" class="mb-4 transition-all duration-300"></div>
+
+            <div id="correctAnswer" class="bg-yellow-50 p-3 rounded-lg border border-yellow-200 text-sm hidden mb-4 transition-all duration-300">
+                <p class="font-semibold text-gray-700">Solución:</p>
+                <p class="text-red-600">Conteo correcto: <span id="correctCount" class="font-bold">0</span> ataques.</p>
+                <p class="text-points">Puntuación de este round: <span id="correctPoints" class="font-bold">0</span> puntos.</p>
+            </div>
+
+            <!-- Entrada de Usuario y Botón -->
+            <div class="flex space-x-3 items-center">
+                <input type="number" id="guess" class="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-primary focus:border-primary transition" placeholder="Número total de ataques..." min="0">
+                <button id="checkButton" onclick="checkGuess()" class="px-4 py-3 bg-primary text-white font-bold rounded-lg shadow-md hover:bg-primary-dark transition disabled:bg-gray-400 disabled:cursor-not-allowed flex-shrink-0 text-sm">
+                    Comprobar
+                </button>
+            </div>
+        </div>
+
+        <!-- Selectores de Tema y Estilo de Piezas (Compactados) -->
+        <div class="mt-6 p-4 bg-white rounded-xl shadow-lg flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-8">
+            <!-- Selector de Tema del Tablero -->
+            <div class="w-full md:w-1/2">
+                <p class="font-semibold text-gray-700 mb-2 text-sm">Tema del Tablero</p>
+                <div id="boardThemeSelector" class="flex space-x-3">
+                    <!-- Swatches se renderizan aquí -->
+                </div>
+            </div>
+            
+            <!-- Selector de Estilo de Piezas -->
+            <div class="w-full md:w-1/2">
+                <p class="font-semibold text-gray-700 mb-2 text-sm">Estilo de Piezas</p>
+                <div id="pieceStyleSelector" class="flex space-x-3">
+                    <!-- Swatches se renderizan aquí -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Información/Instrucciones y Game Over -->
+    <div id="infoModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 hidden" onclick="toggleInfoModal(false)">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full relative" onclick="event.stopPropagation()">
+            <button onclick="toggleInfoModal(false)" class="absolute top-3 right-3 text-gray-400 hover:text-gray-700 transition">
+                <i class="fas fa-times"></i>
+            </button>
+            <h2 class="text-2xl font-bold mb-3 text-gray-800">
+                <!-- Título dinámico -->
+            </h2>
+            <p class="font-semibold text-gray-700">
+                 <!-- Subtítulo dinámico -->
+            </p>
+            <ul class="list-disc list-inside mt-3 text-sm text-gray-600 space-y-1">
+                <!-- Contenido de las instrucciones dinámico -->
+            </ul>
+            <p class="text-xs text-center text-gray-500 mt-4">
+                 <!-- Botón o texto de cierre dinámico -->
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // --- CONSTANTES Y UTILIDADES ---
+        const BOARD_SIZE = 8;
+        const INITIAL_LIVES = 3;
+        const PIECE_ICONS = {
+            'Rook': 'fa-chess-rook',
+            'Knight': 'fa-chess-knight',
+            'Bishop': 'fa-chess-bishop',
+            'Queen': 'fa-chess-queen',
+            'King': 'fa-chess-king',
+        };
+        
+        // Valores de las piezas para el cálculo de puntos (Lógica 9)
+        const PIECE_VALUES = {
+            'Rook': 5,
+            'Knight': 3,
+            'Bishop': 3,
+            'Queen': 9,
+            'King': 0, // El Rey tiene valor 0 en este conteo de puntos
+        };
+
+        // --- ESTADOS DE TEMAS Y ESTILOS (Versión 7) ---
+        const BOARD_THEMES = {
+            'Classic Blue': { light: '#d1d5db', dark: '#3b82f6' }, // Gris / Azul
+            'Green Jungle': { light: '#f0fdf4', dark: '#15803d' }, // Crema Verde / Verde Oscuro
+            'Wood Grain': { light: '#fef3c7', dark: '#b45309' },   // Crema / Marrón Oscuro
+            'Dark Mode': { light: '#4b5563', dark: '#1f2937' },    // Gris Oscuro / Casi Negro
+        };
+
+        const PIECE_STYLES = {
+            'Standard': { white: '#f3f4f6', black: '#1f2937' },
+            'Gold/Silver': { white: '#fcd34d', black: '#9ca3af' }, 
+            'Red/Blue': { white: '#ef4444', black: '#3b82f6' },
+            'Deep Purple': { white: '#f5f3ff', black: '#4c1d95' }
+        };
+
+        let currentBoardTheme = 'Classic Blue';
+        let currentPieceStyle = 'Standard';
+
+
+        // --- ELEMENTOS DOM ---
+        const BOARD_ELEMENT = document.getElementById('chessboard');
+        const FEEDBACK_ELEMENT = document.getElementById('feedback');
+        const CORRECT_ANSWER_ELEMENT = document.getElementById('correctAnswer');
+        const CORRECT_COUNT_ELEMENT = document.getElementById('correctCount');
+        const CORRECT_POINTS_ELEMENT = document.getElementById('correctPoints'); 
+        const CHECK_BUTTON = document.getElementById('checkButton');
+        const GUESS_INPUT = document.getElementById('guess');
+        
+        const LEVEL_DISPLAY = document.getElementById('currentLevelDisplay');
+        const PIECE_COUNT_DISPLAY = document.getElementById('currentPieceCountDisplay');
+        const TOTAL_SCORE_DISPLAY = document.getElementById('totalScoreDisplay'); 
+        const LIVES_DISPLAY = document.getElementById('livesDisplay'); 
+        const SOUND_ICON = document.getElementById('soundIcon');
+        const BOARD_THEME_SELECTOR = document.getElementById('boardThemeSelector');
+        const PIECE_STYLE_SELECTOR = document.getElementById('pieceStyleSelector');
+        
+        // Lógica de dificultad y puntuación
+        const MAX_PIECES_POOL = 16; 
+        let currentLevel = 1; 
+        let totalScore = 0; 
+        let currentLives = INITIAL_LIVES; 
+
+        let currentPieces = [];
+        let correctAttackedCount = 0;
+        let currentCorrectPoints = 0;
+        let showSolution = false;
+        
+        // --- FUNCIONES DE TEMA Y ESTILO (Versión 7) ---
+
+        /**
+         * Actualiza las variables CSS del tablero y re-renderiza.
+         * @param {string} themeName - Nombre del tema de BOARD_THEMES.
+         */
+        function setBoardTheme(themeName) {
+            currentBoardTheme = themeName;
+            const theme = BOARD_THEMES[themeName];
+            
+            document.documentElement.style.setProperty('--board-light-color', theme.light);
+            document.documentElement.style.setProperty('--board-dark-color', theme.dark);
+            
+            // Actualizar la selección visual de los swatches
+            document.querySelectorAll('#boardThemeSelector .color-swatch').forEach(el => {
+                el.classList.remove('swatch-selected');
+                if (el.dataset.theme === themeName) {
+                    el.classList.add('swatch-selected');
+                }
+            });
+
+            // Re-renderizar si el juego ya ha sido iniciado
+            if (currentPieces.length > 0) {
+                // Se llama a renderBoard sin sets de ataques para no mostrar solución
+                renderBoard(currentPieces); 
+            }
+        }
+
+        /**
+         * Actualiza las variables CSS de las piezas y re-renderiza.
+         * @param {string} styleName - Nombre del estilo de PIECE_STYLES.
+         */
+        function setPieceStyle(styleName) {
+            currentPieceStyle = styleName;
+            const style = PIECE_STYLES[styleName];
+
+            document.documentElement.style.setProperty('--piece-white-color', style.white);
+            document.documentElement.style.setProperty('--piece-black-color', style.black);
+
+            // Actualizar la selección visual de los swatches
+            document.querySelectorAll('#pieceStyleSelector .color-swatch').forEach(el => {
+                el.classList.remove('swatch-selected');
+                if (el.dataset.style === styleName) {
+                    el.classList.add('swatch-selected');
+                }
+            });
+
+            // Re-renderizar si el juego ya ha sido iniciado
+            if (currentPieces.length > 0) {
+                 // Se llama a renderBoard sin sets de ataques para no mostrar solución
+                renderBoard(currentPieces);
+            }
+        }
+
+        /**
+         * Renderiza los selectores de tema y estilo.
+         */
+        function renderThemeSelectors() {
+            // 1. Selector de Tema de Tablero
+            BOARD_THEME_SELECTOR.innerHTML = '';
+            Object.keys(BOARD_THEMES).forEach(themeName => {
+                const theme = BOARD_THEMES[themeName];
+                const swatch = document.createElement('div');
+                swatch.className = `color-swatch flex relative`;
+                swatch.dataset.theme = themeName;
+                swatch.title = themeName;
+                swatch.onclick = () => setBoardTheme(themeName);
+                
+                // Muestra un pequeño preview del tablero (2x2)
+                swatch.innerHTML = `
+                    <div style="background-color: ${theme.light}; width: 50%; height: 100%; border-top-left-radius: 4px; border-bottom-right-radius: 2px;"></div>
+                    <div style="background-color: ${theme.dark}; width: 50%; height: 100%; border-top-right-radius: 4px; border-bottom-left-radius: 2px;"></div>
+                `;
+                
+                BOARD_THEME_SELECTOR.appendChild(swatch);
+            });
+            setBoardTheme(currentBoardTheme); // Aplicar el tema inicial
+
+            // 2. Selector de Estilo de Piezas
+            PIECE_STYLE_SELECTOR.innerHTML = '';
+            Object.keys(PIECE_STYLES).forEach(styleName => {
+                const style = PIECE_STYLES[styleName];
+                const swatch = document.createElement('div');
+                swatch.className = `color-swatch flex relative justify-center items-center text-xl`;
+                swatch.dataset.style = styleName;
+                swatch.title = styleName;
+                swatch.onclick = () => setPieceStyle(styleName);
+
+                // Muestra la combinación de colores de las piezas
+                swatch.style.backgroundColor = style.black;
+                swatch.innerHTML = `
+                    <i class="fas fa-chess-queen" style="color: ${style.white}; filter: drop-shadow(0 0 1px #000);"></i>
+                `;
+
+                PIECE_STYLE_SELECTOR.appendChild(swatch);
+            });
+            setPieceStyle(currentPieceStyle); // Aplicar el estilo inicial
+        }
+
+
+        // --- LÓGICA DE AUDIO (TONE.JS) --- 
+        let victorySynth;
+        let failureSynth;
+        let audioContextStarted = false;
+        let isSoundEnabled = true; 
+
+        function initAudio() {
+            if (audioContextStarted) return;
+            // Asegurarse de que el AudioContext se inicia con la interacción del usuario
+            Tone.start(); 
+
+            const reverb = new Tone.Reverb({
+                decay: 5, 
+                preDelay: 0.01,
+                wet: 0.7 
+            }).toDestination();
+
+            victorySynth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.5, decay: 0.1, sustain: 0.7, release: 1.5 },
+                volume: -10
+            }).connect(reverb);
+            
+            failureSynth = new Tone.Synth({
+                oscillator: { type: "sawtooth" },
+                envelope: { attack: 0.005, decay: 0.5, sustain: 0, release: 0.1 },
+                volume: -5
+            }).toDestination();
+            
+            audioContextStarted = true;
+        }
+
+        function playVictorySound() {
+            if (!isSoundEnabled) return;
+            initAudio();
+            victorySynth.triggerAttackRelease(["C5", "E5", "G5"], "1.5n");
+        }
+
+        function playFailureSound() {
+            if (!isSoundEnabled) return;
+            initAudio();
+            failureSynth.triggerAttackRelease("C3", "8n");
+            failureSynth.triggerAttackRelease("F#2", "8n", Tone.now() + 0.1);
+        }
+
+        window.toggleSound = function() {
+            isSoundEnabled = !isSoundEnabled;
+            if (isSoundEnabled) {
+                SOUND_ICON.classList.remove('fa-volume-mute');
+                SOUND_ICON.classList.add('fa-volume-up');
+            } else {
+                SOUND_ICON.classList.remove('fa-volume-up');
+                SOUND_ICON.classList.add('fa-volume-mute');
+            }
+        }
+        
+        // Modal de Información/Instrucciones (Versión 7)
+        window.toggleInfoModal = function(show) {
+            const modal = document.getElementById('infoModal');
+            if (show) {
+                document.querySelector('#infoModal h2').innerHTML = '<i class="fas fa-info-circle mr-2 text-primary"></i> Instrucciones';
+                document.querySelector('#infoModal p.font-semibold').innerHTML = 'Tu objetivo es contar cuántas veces se ataca a una pieza de **color opuesto**. ¡Cada atacante cuenta!';
+                document.querySelector('#infoModal ul').innerHTML = `
+                    <ul class="list-disc list-inside mt-3 text-sm text-gray-600 space-y-1">
+                        <li>**Conteo Múltiple:** Si una pieza es atacada por dos piezas, el conteo total aumenta en 2.</li>
+                        <li>Las piezas del mismo color nunca se atacan entre sí.</li>
+                        <li>Cada acierto suma puntos basados en el valor de las piezas atacadas multiplicado por el número de atacantes (Lógica 9).</li>
+                        <li>Tienes ${INITIAL_LIVES} vidas. ¡Un fallo resta una vida!</li>
+                    </ul>
+                `;
+                document.querySelector('#infoModal p.text-xs').innerHTML = 'Cierra este cuadro para continuar.';
+
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        function renderLives() {
+            LIVES_DISPLAY.innerHTML = '';
+            for (let i = 0; i < INITIAL_LIVES; i++) {
+                const heart = document.createElement('i');
+                // Uso de la clase 'text-red-500' en lugar de 'text-xl' directamente en el CSS
+                heart.className = `fas fa-heart text-red-500 text-xl transition-opacity duration-300 ${i < currentLives ? 'opacity-100' : 'opacity-30'}`;
+                LIVES_DISPLAY.appendChild(heart);
+            }
+        }
+
+        function getPieceCountForLevel(level) {
+            // Lógica de dificultad: 4 piezas + 1 por nivel (hasta un máximo de 16)
+            const targetCount = Math.min(4 + (level - 1), MAX_PIECES_POOL);
+            return targetCount;
+        }
+
+        function isValid(r, c) {
+            return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
+        }
+        
+        function getPieceAt(r, c, pieces) {
+            return pieces.find(p => p.row === r && p.col === c);
+        }
+        
+        // --- LÓGICA DE ATAQUE DE PIEZAS (Versión 9) ---
+        
+        function getSliderAttacks(r, c, pieces, directions) {
+            const attacks = [];
+            for (const [dr, dc] of directions) {
+                for (let i = 1; i < BOARD_SIZE; i++) {
+                    const nr = r + dr * i;
+                    const nc = c + dc * i;
+                    if (!isValid(nr, nc)) break;
+
+                    const targetPiece = getPieceAt(nr, nc, pieces);
+                    const squareKey = `${nr},${nc}`;
+                    
+                    attacks.push(squareKey); // Se añade la casilla atacada (sea pieza o vacía)
+                    
+                    if (targetPiece) {
+                        break; // Bloquea la línea después de la primera pieza
+                    }
+                }
+            }
+            return attacks;
+        }
+
+        function getRookAttacks(r, c, pieces) {
+            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]]; 
+            return getSliderAttacks(r, c, pieces, directions);
+        }
+
+        function getBishopAttacks(r, c, pieces) {
+            const directions = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+            return getSliderAttacks(r, c, pieces, directions);
+        }
+
+        function getQueenAttacks(r, c, pieces) {
+            const directions = [
+                [0, 1], [0, -1], [1, 0], [-1, 0], 
+                [1, 1], [1, -1], [-1, 1], [-1, -1]
+            ];
+            return getSliderAttacks(r, c, pieces, directions);
+        }
+
+        function getKnightAttacks(r, c, pieces) {
+            const attacks = [];
+            const moves = [
+                [2, 1], [2, -1], [-2, 1], [-2, -1],
+                [1, 2], [1, -2], [-1, 2], [-1, -2]
+            ];
+            
+            for (const [dr, dc] of moves) {
+                const nr = r + dr;
+                const nc = c + dc;
+                if (isValid(nr, nc)) {
+                    attacks.push(`${nr},${nc}`);
+                }
+            }
+            return attacks;
+        }
+
+        function getKingAttacks(r, c, pieces) {
+            const attacks = [];
+            const moves = [
+                [0, 1], [0, -1], [1, 0], [-1, 0],
+                [1, 1], [1, -1], [-1, 1], [-1, -1]
+            ];
+            
+            for (const [dr, dc] of moves) {
+                const nr = r + dr;
+                const nc = c + dc;
+                if (isValid(nr, nc)) {
+                    attacks.push(`${nr},${nc}`);
+                }
+            }
+            return attacks;
+        }
+        
+        /**
+         * Calcula qué piezas atacan qué casillas, guardando qué pieza ataca.
+         * @returns {{whiteAttacks: Map<string, Array<Piece>>, blackAttacks: Map<string, Array<Piece>>}}
+         */
+        function calculateDetailedAttacks(pieces){
+            const whiteAttacks=new Map(),blackAttacks=new Map();
+            for(const piece of pieces){
+                let attacks=[];
+                switch(piece.type){
+                    case 'Rook':attacks=getRookAttacks(piece.row,piece.col,pieces);break;
+                    case 'Bishop':attacks=getBishopAttacks(piece.row,piece.col,pieces);break;
+                    case 'Knight':attacks=getKnightAttacks(piece.row,piece.col,pieces);break;
+                    case 'Queen':attacks=getQueenAttacks(piece.row,piece.col,pieces);break;
+                    case 'King':attacks=getKingAttacks(piece.row,piece.col,pieces);break;
+                }
+                const targetMap=piece.color==='White'?whiteAttacks:blackAttacks;
+                for(const sq of attacks){
+                    // Solo consideramos ataques a piezas
+                    const targetPiece = getPieceAt(parseInt(sq[0]), parseInt(sq[2]), pieces);
+                    if(targetPiece && targetPiece.color !== piece.color){
+                         if(!targetMap.has(sq))targetMap.set(sq,[]);
+                         targetMap.get(sq).push(piece);
+                    }
+                }
+            }
+            return {whiteAttacks,blackAttacks};
+        }
+
+        /**
+         * Calcula el conteo total de ataques y la puntuación basada en la lógica 9.
+         * @param {Array<Piece>} pieces - Lista de todas las piezas.
+         * @param {Object} attackedMaps - Mapas detallados de ataques de calculateDetailedAttacks.
+         * @returns {{count: number, value: number, attackedPieces: Array<Piece>}}
+         */
+        function getDetailedAttackData(pieces, attackedMaps){
+            let count=0,value=0;
+            const attackedPiecesData=[];
+
+            for(const piece of pieces){
+                const key=`${piece.row},${piece.col}`;
+                // Si la pieza es blanca, miramos los ataques del negro y viceversa
+                const attackers = piece.color==='White' ? attackedMaps.blackAttacks.get(key) : attackedMaps.whiteAttacks.get(key);
+                
+                if(attackers && attackers.length>0){
+                    // Cada atacante a esta pieza suma al conteo (Lógica 9)
+                    count+=attackers.length;
+                    
+                    // La puntuación es el valor de la pieza atacada * el número de atacantes (Lógica 9)
+                    value+=PIECE_VALUES[piece.type] * attackers.length; 
+                    
+                    attackedPiecesData.push({...piece, attackers: attackers.length});
+                }
+            }
+            return {count,value,attackedPieces: attackedPiecesData};
+        }
+
+        // --- LÓGICA DE JUEGO Y RENDERIZADO ---
+
+        function generateRandomPosition(piecesToSelect) {
+            let piecePool = [
+                { type: 'King', color: 'White' }, { type: 'Queen', color: 'White' },
+                { type: 'Rook', color: 'White' }, { type: 'Rook', color: 'White' },
+                { type: 'Bishop', color: 'White' }, { type: 'Bishop', color: 'White' },
+                { type: 'Knight', color: 'White' }, { type: 'Knight', color: 'White' },
+                
+                { type: 'King', color: 'Black' }, { type: 'Queen', color: 'Black' },
+                { type: 'Rook', color: 'Black' }, { type: 'Rook', color: 'Black' },
+                { type: 'Bishop', color: 'Black' }, { type: 'Bishop', color: 'Black' },
+                { type: 'Knight', color: 'Black' }, { type: 'Knight', color: 'Black' },
+            ];
+
+            const selectedPieces = [];
+            const newPieces = [];
+            const occupied = new Set();
+            
+            // 1. Selección aleatoria de piezas
+            for (let i = 0; i < piecesToSelect; i++) {
+                if (piecePool.length === 0) break;
+
+                const randomIndex = Math.floor(Math.random() * piecePool.length);
+                selectedPieces.push(piecePool[randomIndex]);
+                piecePool.splice(randomIndex, 1); 
+            }
+            
+            const whiteCount = selectedPieces.filter(p => p.color === 'White').length;
+            const blackCount = selectedPieces.filter(p => p.color === 'Black').length;
+
+            if (whiteCount === 0 || blackCount === 0 || piecesToSelect < 2) {
+                // Generar nuevamente si solo hay un color
+                return generateRandomPosition(piecesToSelect); 
+            }
+            
+            // 2. Colocación de piezas con chequeo de Rey adyacente
+            for (const piece of selectedPieces) {
+                let row, col, posKey;
+                let isPlacementIllegal; 
+                
+                do {
+                    row = Math.floor(Math.random() * BOARD_SIZE);
+                    col = Math.floor(Math.random() * BOARD_SIZE);
+                    posKey = `${row},${col}`;
+                    
+                    isPlacementIllegal = occupied.has(posKey);
+                    
+                    if (!isPlacementIllegal && piece.type === 'King') {
+                        // Chequear adyacencia con el Rey opuesto ya colocado
+                        for (const existingPiece of newPieces) {
+                            if (existingPiece.type === 'King' && existingPiece.color !== piece.color) {
+                                const dr = Math.abs(row - existingPiece.row);
+                                const dc = Math.abs(col - existingPiece.col);
+                                
+                                if (dr <= 1 && dc <= 1 && (dr > 0 || dc > 0)) {
+                                    isPlacementIllegal = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } while (isPlacementIllegal);
+
+                newPieces.push({
+                    type: piece.type,
+                    row: row,
+                    col: col,
+                    color: piece.color,
+                });
+                occupied.add(posKey);
+            }
+            
+            return newPieces;
+        }
+
+        /**
+         * Renderiza el tablero y las piezas.
+         * Se actualiza para usar el resaltado de pieza única/múltiple de ataques (Lógica 9).
+         * @param {Array<Piece>} pieces - Lista de todas las piezas.
+         * @param {Object} attackedMaps - Mapas detallados de ataques de calculateDetailedAttacks.
+         */
+        function renderBoard(pieces, attackedMaps = { whiteAttacks: new Map(), blackAttacks: new Map() }) {
+            BOARD_ELEMENT.innerHTML = '';
+            
+            const attackedPiecesMap = new Map(); // Mapa para almacenar el número de atacantes por casilla/pieza
+            
+            // Llenar el mapa de atacantes
+            pieces.forEach(p => {
+                const squareKey = `${p.row},${p.col}`;
+                let attackers = 0;
+                
+                if (p.color === 'White' && attackedMaps.blackAttacks.has(squareKey)) {
+                    attackers = attackedMaps.blackAttacks.get(squareKey).length;
+                } else if (p.color === 'Black' && attackedMaps.whiteAttacks.has(squareKey)) {
+                    attackers = attackedMaps.whiteAttacks.get(squareKey).length;
+                }
+                
+                if (attackers > 0) {
+                    attackedPiecesMap.set(squareKey, attackers);
+                }
+            });
+
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const isLight = (r + c) % 2 === 0;
+                    const squareColorClass = isLight ? 'light' : 'dark';
+                    const squareKey = `${r},${c}`;
+
+                    const piece = getPieceAt(r, c, pieces);
+                    const attackersCount = attackedPiecesMap.get(squareKey) || 0;
+                    
+                    const squareDiv = document.createElement('div');
+                    squareDiv.className = `square ${squareColorClass}`;
+                    squareDiv.dataset.row = r;
+                    squareDiv.dataset.col = c;
+
+                    
+                    // Resaltar la CASILLA si hay solución Y hay una pieza atacada en esa casilla
+                    if (showSolution && attackersCount > 0) {
+                         const highlightDiv = document.createElement('div');
+                         highlightDiv.className = 'attacked-square-highlight';
+                         squareDiv.appendChild(highlightDiv);
+                    }
+
+
+                    if (piece) {
+                        const pieceDiv = document.createElement('i');
+                        let iconClass = PIECE_ICONS[piece.type];
+                        
+                        const colorClass = piece.color === 'White' ? 'white-piece' : 'black-piece';
+                        
+                        let attackHighlightClass = '';
+                        if (showSolution && attackersCount > 0) {
+                            // Aplicar el resaltado de la pieza: fuerte para >1 atacante (Lógica 9)
+                            if (attackersCount > 1) {
+                                attackHighlightClass = 'attack-highlight-strong';
+                            } else {
+                                attackHighlightClass = 'attack-highlight';
+                            }
+                        }
+
+                        pieceDiv.className = `fas ${iconClass} ${colorClass} ${attackHighlightClass} transition-all duration-300 piece`;
+                        pieceDiv.style.zIndex = 10; 
+                        
+                        // Añadir un contador si hay múltiples ataques y la solución está visible
+                        if (showSolution && attackersCount > 1) {
+                            const countSpan = document.createElement('span');
+                            countSpan.textContent = attackersCount;
+                            countSpan.className = 'absolute bottom-1 right-1 text-xs font-bold bg-yellow-400 text-black rounded-full w-4 h-4 flex items-center justify-center z-20 shadow-md';
+                            squareDiv.appendChild(countSpan);
+                        }
+
+                        squareDiv.appendChild(pieceDiv);
+                    }
+                    
+                    BOARD_ELEMENT.appendChild(squareDiv);
+                }
+            }
+        }
+
+
+        window.startNewGame = function(resetGame = false) {
+            if (resetGame) {
+                currentLives = INITIAL_LIVES;
+                currentLevel = 1;
+                totalScore = 0;
+                TOTAL_SCORE_DISPLAY.textContent = totalScore;
+            }
+            
+            setupNewPosition();
+        }
+
+        function setupNewPosition() {
+            const piecesToGenerate = getPieceCountForLevel(currentLevel); 
+            
+            currentPieces = generateRandomPosition(piecesToGenerate);
+            const attackedMaps = calculateDetailedAttacks(currentPieces); // Lógica 9
+            const attackedData = getDetailedAttackData(currentPieces, attackedMaps); // Lógica 9
+            
+            correctAttackedCount = attackedData.count;
+            currentCorrectPoints = attackedData.value; 
+
+            renderLives();
+            LEVEL_DISPLAY.textContent = currentLevel;
+            PIECE_COUNT_DISPLAY.textContent = piecesToGenerate;
+
+            showSolution = false;
+            FEEDBACK_ELEMENT.classList.remove('feedback-show', 'bg-success', 'bg-error', 'text-white');
+            FEEDBACK_ELEMENT.textContent = '';
+            CORRECT_ANSWER_ELEMENT.classList.add('hidden');
+            GUESS_INPUT.value = '';
+            GUESS_INPUT.disabled = false;
+            
+            CHECK_BUTTON.disabled = false;
+            CHECK_BUTTON.textContent = 'Comprobar';
+            CHECK_BUTTON.onclick = checkGuess;
+
+            renderBoard(currentPieces);
+        }
+
+        function showGameOver() {
+            const modal = document.getElementById('infoModal');
+            
+            document.querySelector('#infoModal h2').innerHTML = '<i class="fas fa-ghost mr-2 text-error"></i> ¡Juego Terminado! (Game Over)';
+            document.querySelector('#infoModal p.font-semibold').innerHTML = `No te quedan vidas. ¡Tu puntuación final es de <span class="text-points text-2xl">${totalScore}</span> puntos!`;
+            document.querySelector('#infoModal ul').innerHTML = `
+                <li class="mt-3 text-center text-base list-none">Nivel alcanzado: ${currentLevel}</li>
+            `;
+            document.querySelector('#infoModal p.text-xs').innerHTML = `<button onclick="startNewGame(true); toggleInfoModal(false);" class="mt-2 px-4 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary-dark transition">Volver a empezar</button>`;
+            
+            modal.classList.remove('hidden');
+        }
+
+        window.checkGuess = function() {
+            initAudio();
+
+            const userGuess = parseInt(GUESS_INPUT.value, 10);
+            
+            if (isNaN(userGuess) || userGuess < 0) {
+                FEEDBACK_ELEMENT.textContent = 'Por favor, introduce un número válido';
+                FEEDBACK_ELEMENT.classList.add('feedback-show', 'bg-error', 'text-white');
+                FEEDBACK_ELEMENT.classList.remove('bg-success');
+                return;
+            }
+
+            CHECK_BUTTON.disabled = true;
+            GUESS_INPUT.disabled = true;
+            showSolution = true;
+            
+            const attackedMaps = calculateDetailedAttacks(currentPieces); // Lógica 9
+            const attackedData = getDetailedAttackData(currentPieces, attackedMaps); // Lógica 9
+            
+            const correctCount = attackedData.count;
+            const correctPoints = attackedData.value;
+
+
+            if (userGuess === correctCount) {
+                playVictorySound();
+                
+                // Actualizar puntuación total con los puntos de este round (Lógica 9)
+                totalScore += correctPoints; 
+                TOTAL_SCORE_DISPLAY.textContent = totalScore;
+                currentLevel = Math.min(currentLevel + 1, 13);
+                
+
+                FEEDBACK_ELEMENT.textContent = `¡Felicidades! Acertaste. Ganaste ${correctPoints} puntos.`;
+                FEEDBACK_ELEMENT.classList.add('feedback-show', 'bg-success', 'text-white');
+                FEEDBACK_ELEMENT.classList.remove('bg-error');
+                
+                if (currentLevel < 13) { 
+                    setTimeout(setupNewPosition, 2000); 
+                } else {
+                    FEEDBACK_ELEMENT.textContent = `¡IMPRESIONANTE! ¡Has completado el último nivel con ${totalScore} puntos!`;
+                }
+
+            } else {
+                playFailureSound();
+                
+                currentLives--;
+                renderLives();
+                
+                FEEDBACK_ELEMENT.textContent = `¡Incorrecto! Tu conteo fue ${userGuess}. ¡Perdiste una vida!`;
+                FEEDBACK_ELEMENT.classList.add('feedback-show', 'bg-error', 'text-white');
+                FEEDBACK_ELEMENT.classList.remove('bg-success');
+
+                CORRECT_COUNT_ELEMENT.textContent = correctCount;
+                CORRECT_POINTS_ELEMENT.textContent = correctPoints;
+                CORRECT_ANSWER_ELEMENT.classList.remove('hidden'); 
+                
+                if (currentLives <= 0) {
+                    setTimeout(showGameOver, 2000);
+                } else {
+                    setTimeout(setupNewPosition, 3000);
+                }
+            }
+            
+            // Renderiza el tablero con la solución
+            renderBoard(currentPieces, attackedMaps); 
+        }
+
+        // Inicializar el juego y los selectores al cargar la página
+        window.onload = function() {
+            renderThemeSelectors(); // Primero renderizar los selectores y aplicar los temas por defecto
+            startNewGame(true);
+        };
+
+    </script>
+</body>
+</html>
